@@ -1,4 +1,5 @@
 #include "utils/socket.h"
+#include <pthread.h>
 #include <stdbool.h>
 #include <stdio.h>
 #include <time.h>
@@ -6,7 +7,7 @@
 
 #define PORT 9999
 #define IP ""
-
+#define MAX_CLIENTS 10
 struct clientSocket {
 	int clientSocketFD;
 	struct sockaddr_in clientAddress;
@@ -15,7 +16,13 @@ struct clientSocket {
 	bool connected;
 };
 
+struct clientSocket acceptedClients[MAX_CLIENTS];
+int currentClients = 0;
+pthread_mutex_t logMutex = PTHREAD_MUTEX_INITIALIZER;
+
 void logData(char* message) {
+	pthread_mutex_lock(&logMutex);
+
 	FILE* log = fopen("server-log.txt", "a");
 	if (log == NULL) {
 		printf("Couldn't open a file");
@@ -31,32 +38,94 @@ void logData(char* message) {
 
 	fprintf(log, "%s - %s\n", dateString, message);
 	fclose(log);
+
+	pthread_mutex_unlock(&logMutex);
 }
 
-struct clientSocket* acceptClient(int serverSocketFD) {
+void broadcastMessages(char* buffer, int clientSocketFD) {
+	for (int i = 0; i < currentClients; i++) {
+		if (acceptedClients[i].clientSocketFD != clientSocketFD) {
+			send(acceptedClients[i].clientSocketFD, buffer, strlen(buffer), 0);
+		}
+	}
+}
 
+struct clientSocket* createClientSocket(int serverSocketFD) {
 	struct sockaddr_in clientAddress;
-	socklen_t clientAddressSize = (socklen_t)sizeof(clientAddress);
+	socklen_t clientAddressSize = sizeof(clientAddress);
 	int clientFD = accept(serverSocketFD, (struct sockaddr*)&clientAddress, &clientAddressSize);
 
 	char name[100];
 	ssize_t nameLength = recv(clientFD, name, sizeof(name), 0);
 	name[nameLength] = '\0';
 
-	char logMessage[100];
-	sprintf(logMessage, "%s entered the chat\0", name);
-
-	printf("%s\n", logMessage);
-	logData(logMessage);
-
 	struct clientSocket* client = malloc(sizeof(struct clientSocket));
 	client->clientSocketFD = clientFD;
 	client->clientAddress = clientAddress;
 	strcpy(client->clientName, name);
-	client->error = 0;
-	client->connected = true;
+	client->connected = clientFD > 0;
+	if (!client->connected) {
+		client->error = client->clientSocketFD;
+	}
+
+	char logMessage[100];
+	snprintf(logMessage, sizeof(logMessage), "%s joined the chat", name);
+	printf("%s\n", logMessage);
+	logData(logMessage);
+
+	char broadcastMsg[100];
+	snprintf(broadcastMsg, sizeof(broadcastMsg), "%s joined the chat", name);
+	broadcastMessages(broadcastMsg, client->clientSocketFD);
 
 	return client;
+}
+
+void* handleClientMessages(void* arg) {
+	struct clientSocket* client = (struct clientSocket*)arg;
+	char buffer[1024];
+
+	while (true) {
+		memset(buffer, 0, sizeof(buffer));
+		ssize_t receivedChar = recv(client->clientSocketFD, buffer, sizeof(buffer), 0);
+
+		if (receivedChar > 0) {
+			buffer[receivedChar] = 0;
+			printf("%s:%s", client->clientName, buffer);
+
+			int newLineIndex = strcspn(buffer, "\n");
+			buffer[newLineIndex] = 0;
+
+			char* broadcastMessage = malloc(sizeof(buffer) + sizeof(client->clientName));
+			sprintf(broadcastMessage, "%s:%s", client->clientName, buffer);
+			broadcastMessages(broadcastMessage, client->clientSocketFD);
+		} else {
+			char logMessage[100];
+			sprintf(logMessage, "%s has left the chat\0", client->clientName);
+			printf("%s\n", logMessage);
+			logData(logMessage);
+
+			broadcastMessages(logMessage, client->clientSocketFD);
+
+			client->connected = false;
+			break;
+		}
+	}
+
+	close(client->clientSocketFD);
+	free(client);
+
+	return NULL;
+}
+
+void acceptClientConnections(int serverSocketFD) {
+	while (true) {
+		struct clientSocket* client = createClientSocket(serverSocketFD);
+		acceptedClients[currentClients++] = *client;
+
+		pthread_t threadId;
+		pthread_create(&threadId, NULL, handleClientMessages, (void*)client);
+		pthread_detach(threadId);
+	}
 }
 
 int main(int argc, char const* argv[]) {
@@ -64,41 +133,21 @@ int main(int argc, char const* argv[]) {
 	const struct sockaddr_in* serverAddress = createAddress(IP, PORT);
 
 	int bindResult = bind(serverSocketFD, (struct sockaddr*)serverAddress, sizeof(*serverAddress));
-
-	if (bindResult == 0) {
-		printf("Socket bound successfully\n");
-	} else {
+	if (bindResult != 0) {
 		printf("Socket binding failed\n");
 		exit(1);
 	}
 
-	int listenResult = listen(serverSocketFD, 10);
-	if (listenResult == 0) {
-		printf("Server is listening on %d\n", PORT);
+	int listenResult = listen(serverSocketFD, MAX_CLIENTS);
+	if (listenResult != 0) {
+		printf("Server failed to listen\n");
+		exit(1);
 	}
 
-	struct clientSocket* client = acceptClient(serverSocketFD);
+	printf("Server is listening on %d\n", PORT);
 
-	char buffer[1024];
-	memset(buffer, 0, sizeof(buffer));
-	while (true) {
-		ssize_t receivedChar = recv(client->clientSocketFD, buffer, sizeof(buffer), 0);
+	acceptClientConnections(serverSocketFD);
 
-		if (receivedChar > 0) {
-			buffer[receivedChar] = 0;
-			printf("%s: %s", client->clientName, buffer);
-		} else {
-			char logMessage[100];
-			sprintf(logMessage, "%s has left the chat\0", client->clientName);
-			printf("%s\n", logMessage);
-			logData(logMessage);
-			client->connected = false;
-			break;
-		}
-	}
-
-	close(client->clientSocketFD);
 	shutdown(serverSocketFD, SHUT_RDWR);
-
 	return 0;
 }
