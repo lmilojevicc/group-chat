@@ -18,7 +18,8 @@ int main(int argc, char const* argv[]) {
 	char name[100];
 	printf("Please provide us with your name:");
 	fgets(name, sizeof(name), stdin);
-	name[strcspn(name, "\n")] = 0;
+	int newLineIndex = strcspn(name, "\n");
+	name[newLineIndex] = 0;
 
 	if (name[0] == '\0') {
 		printf("Okay you will stay anonymous\n");
