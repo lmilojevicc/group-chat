@@ -15,7 +15,25 @@ struct clientSocket {
 	bool connected;
 };
 
-struct clientSocket acceptClient(int serverSocketFD) {
+void logData(char* message) {
+	FILE* log = fopen("server-log.txt", "a");
+	if (log == NULL) {
+		printf("Couldn't open a file");
+	}
+
+	time_t rawTime;
+	struct tm* timeInfo;
+	time(&rawTime);
+	timeInfo = localtime(&rawTime);
+
+	char dateString[64];
+	strftime(dateString, sizeof(dateString), "%Y-%m-%d %H:%M:%S", timeInfo);
+
+	fprintf(log, "%s - %s\n", dateString, message);
+	fclose(log);
+}
+
+struct clientSocket* acceptClient(int serverSocketFD) {
 
 	struct sockaddr_in clientAddress;
 	socklen_t clientAddressSize = (socklen_t)sizeof(clientAddress);
@@ -24,14 +42,19 @@ struct clientSocket acceptClient(int serverSocketFD) {
 	char name[100];
 	ssize_t nameLength = recv(clientFD, name, sizeof(name), 0);
 	name[nameLength] = '\0';
-	printf("%s entered the chat\n", name);
 
-	struct clientSocket client;
-	client.clientSocketFD = clientFD;
-	client.clientAddress = clientAddress;
-	strcpy(client.clientName, name);
-	client.error = 0;
-	client.connected = true;
+	char logMessage[100];
+	sprintf(logMessage, "%s entered the chat\0", name);
+
+	printf("%s\n", logMessage);
+	logData(logMessage);
+
+	struct clientSocket* client = malloc(sizeof(struct clientSocket));
+	client->clientSocketFD = clientFD;
+	client->clientAddress = clientAddress;
+	strcpy(client->clientName, name);
+	client->error = 0;
+	client->connected = true;
 
 	return client;
 }
@@ -54,24 +77,27 @@ int main(int argc, char const* argv[]) {
 		printf("Server is listening on %d\n", PORT);
 	}
 
-	struct clientSocket client = acceptClient(serverSocketFD);
+	struct clientSocket* client = acceptClient(serverSocketFD);
 
 	char buffer[1024];
 	memset(buffer, 0, sizeof(buffer));
 	while (true) {
-		ssize_t receivedChar = recv(client.clientSocketFD, buffer, sizeof(buffer), 0);
+		ssize_t receivedChar = recv(client->clientSocketFD, buffer, sizeof(buffer), 0);
 
 		if (receivedChar > 0) {
 			buffer[receivedChar] = 0;
-			printf("%s: %s", client.clientName, buffer);
+			printf("%s: %s", client->clientName, buffer);
 		} else {
-			printf("%s has left the chat\n", client.clientName);
-			client.connected = false;
+			char logMessage[100];
+			sprintf(logMessage, "%s has left the chat\0", client->clientName);
+			printf("%s\n", logMessage);
+			logData(logMessage);
+			client->connected = false;
 			break;
 		}
 	}
 
-	close(client.clientSocketFD);
+	close(client->clientSocketFD);
 	shutdown(serverSocketFD, SHUT_RDWR);
 
 	return 0;
