@@ -1,5 +1,7 @@
 #include "utils/socket.h"
 #include <stdbool.h>
+#include <unistd.h>
+
 #define PORT 9999
 #define IP ""
 
@@ -21,12 +23,26 @@ int main(int argc, char const* argv[]) {
 	socklen_t clientAddressSize = (socklen_t)sizeof(clientAddress);
 	int clientFD = accept(serverSocketFD, (struct sockaddr*)&clientAddress, &clientAddressSize);
 
-	printf("Client connected successfully\n");
+	char clientName[100];
+	while (true) {
+		ssize_t nameLength = recv(clientFD, clientName, sizeof(clientName), 0);
+		printf("%s connected successfully\n", clientName);
+		if (nameLength > 0)
+			break;
+	}
 
 	char buffer[1024];
 	memset(buffer, 0, sizeof(buffer));
-	recv(clientFD, buffer, sizeof(buffer), 0);
-	printf("Message from the client: %s\n", buffer);
+	while (true) {
+		ssize_t receivedChar = recv(clientFD, buffer, sizeof(buffer), 0);
+		if (receivedChar > 0) {
+			buffer[receivedChar] = 0;
+			printf("%s: %s", clientName, buffer);
+		}
+	}
+
+	close(clientFD);
+	shutdown(serverSocketFD, SHUT_RDWR);
 
 	return 0;
 }
