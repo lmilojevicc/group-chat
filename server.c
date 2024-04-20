@@ -1,5 +1,6 @@
 #include "utils/socket.h"
 #include <pthread.h>
+#include <signal.h>
 #include <stdbool.h>
 #include <stdio.h>
 #include <time.h>
@@ -48,6 +49,13 @@ void broadcastMessages(char* buffer, int clientSocketFD) {
 			send(acceptedClients[i].clientSocketFD, buffer, strlen(buffer), 0);
 		}
 	}
+}
+
+void handleTerminationSignal(int signal) {
+	char* message = "Server is shutting down. Goodbye!";
+	broadcastMessages(message, -1);
+	logData("Server is shutting down");
+	exit(0);
 }
 
 struct clientSocket* createClientSocket(int serverSocketFD) {
@@ -129,6 +137,8 @@ void acceptClientConnections(int serverSocketFD) {
 }
 
 int main(int argc, char const* argv[]) {
+	signal(SIGINT, handleTerminationSignal);
+	signal(SIGTERM, handleTerminationSignal);
 	int serverSocketFD = createSocket();
 	const struct sockaddr_in* serverAddress = createAddress(IP, PORT);
 
