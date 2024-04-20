@@ -40,16 +40,14 @@ void messageReceiverThread(struct ClientData* clientData) {
 	pthread_create(&id, NULL, messageReceiver, (void*)clientData);
 }
 
-int main(int argc, char const* argv[]) {
-	int clientSocketFD = createSocket();
-	struct sockaddr_in* serverAddress = createAddress(IP, PORT);
+struct ClientData* createClientData(int clientSocketFD, char* name) {
+	struct ClientData* client = malloc(sizeof(struct ClientData));
+	client->clientSocketFD = clientSocketFD;
+	strcpy(client->name, name);
+	return client;
+}
 
-	int connectResult = connect(clientSocketFD, (struct sockaddr*)serverAddress, sizeof(*serverAddress));
-	if (connectResult != 0) {
-		printf("Failed to connect to the server\n");
-		exit(1);
-	}
-
+void getClientName(char* buffer) {
 	char name[100];
 	printf("Please provide us with your name:");
 	fgets(name, sizeof(name), stdin);
@@ -63,30 +61,46 @@ int main(int argc, char const* argv[]) {
 		sprintf(name, "Anonymous#%d", randomNum);
 	}
 
-	send(clientSocketFD, name, strlen(name), 0);
+	strcpy(buffer, name);
+}
 
-	struct ClientData* clientData = malloc(sizeof(struct ClientData));
-	clientData->clientSocketFD = clientSocketFD;
-	strcpy(clientData->name, name);
-
+void listenForMessages(struct ClientData* client) {
 	char* line = NULL;
 	size_t lineSize = 0;
-	printf("Hi %s, you can now send messages to the group chat.\n\nType EXIT to leave the chat\n", name);
-
-	messageReceiverThread(clientData);
-
+	printf("\nHi %s, you can now send messages to the group chat.\nType EXIT to leave the chat\n\n", client->name);
 	while (true) {
-		printf("%s:", name);
+		printf("%s:", client->name);
 		ssize_t charCount = getline(&line, &lineSize, stdin);
 
 		if (charCount > 0 && strcmp(line, "EXIT\n") == 0) {
 			break;
 		}
 
-		ssize_t charSentCount = send(clientSocketFD, line, charCount, 0);
+		ssize_t charSentCount = send(client->clientSocketFD, line, charCount, 0);
 	}
 
-	close(clientSocketFD);
+	close(client->clientSocketFD);
+}
+
+int main(int argc, char const* argv[]) {
+	int clientSocketFD = createSocket();
+	struct sockaddr_in* serverAddress = createAddress(IP, PORT);
+
+	int connectResult = connect(clientSocketFD, (struct sockaddr*)serverAddress, sizeof(*serverAddress));
+	if (connectResult != 0) {
+		printf("Failed to connect to the server\n");
+		exit(1);
+	}
+
+	char name[100];
+	getClientName(name);
+
+	send(clientSocketFD, name, strlen(name), 0);
+
+	struct ClientData* clientData = createClientData(clientSocketFD, name);
+
+	messageReceiverThread(clientData);
+	listenForMessages(clientData);
 
 	return 0;
 }
