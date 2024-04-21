@@ -35,7 +35,7 @@ void* messageReceiver(void* arg) {
 	return NULL;
 }
 
-void messageReceiverThread(struct ClientData* clientData) {
+void initializeMessageReceiverThread(struct ClientData* clientData) {
 	pthread_t id;
 	pthread_create(&id, NULL, messageReceiver, (void*)clientData);
 }
@@ -64,7 +64,7 @@ void getClientName(char* buffer) {
 	strcpy(buffer, name);
 }
 
-void listenForMessages(struct ClientData* client) {
+void sendMessages(struct ClientData* client) {
 	char* line = NULL;
 	size_t lineSize = 0;
 	printf("\nHi %s, you can now send messages to the group chat.\nType EXIT to leave the chat\n\n", client->name);
@@ -99,8 +99,8 @@ int main(int argc, char const* argv[]) {
 
 	struct ClientData* clientData = createClientData(clientSocketFD, name);
 
-	messageReceiverThread(clientData);
-	listenForMessages(clientData);
+	initializeMessageReceiverThread(clientData);
+	sendMessages(clientData);
 
 	return 0;
 }
