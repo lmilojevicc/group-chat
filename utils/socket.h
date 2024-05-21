@@ -2,7 +2,6 @@
 #define SOCKET_UTIL
 
 #include <arpa/inet.h>
-#include <malloc.h>
 #include <netinet/in.h>
 #include <stdlib.h>
 #include <string.h>

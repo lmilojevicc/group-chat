@@ -1,4 +1,5 @@
 #include "utils/socket.h"
+#include <stdio.h>
 #include <pthread.h>
 #include <stdbool.h>
 #include <time.h>
